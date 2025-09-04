@@ -23,6 +23,8 @@
 import pandas as pd
 import plotly.express as px
 from js import document
+from pyodide.ffi import create_proxy
+from io import StringIO
 
 def handle_file(event):
     file = event.target.files[0]
@@ -30,29 +32,20 @@ def handle_file(event):
         return
     
     # Read file contents into pandas
-    text = file.text()
-    text = text.to_py()
-    from io import StringIO
+    text = file.text().to_py()
     df = pd.read_csv(StringIO(text))
 
-    # Expecting columns like: Date, Score
-    # Ensure Date column is parsed properly
+    # Ensure Date column parses correctly
     df["Date"] = pd.to_datetime(df["Date"])
 
-    # Build line chart
+    # Build interactive line chart
     fig = px.line(df, x="Date", y="Score", title="Marching Band Scores Over Time")
     fig.update_traces(mode="lines+markers")
 
-    # Display in div#chart
-    from pyodide.ffi import create_proxy
-    import json
-    graphJSON = fig.to_json()
-    import plotly
-    plotly.offline.plot(fig, include_plotlyjs="cdn", output_type="div", auto_open=False, show_link=False, config={"displayModeBar": True})
+    # Display inside chart div
     document.getElementById("chart").innerHTML = fig.to_html(include_plotlyjs="cdn", full_html=False)
 
 # Attach event listener
-from pyodide.ffi import create_proxy
 document.getElementById("file-input").addEventListener("change", create_proxy(handle_file))
   </py-script>
 </body>
