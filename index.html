@@ -9,18 +9,13 @@
 <body>
   <h1>Marching Band Scores Over Time</h1>
 
-  <!-- File upload -->
   <input type="file" id="file-input" />
-
-  <!-- Chart output -->
   <div id="chart"></div>
 
-  <!-- Tell PyScript what packages we need -->
   <py-config>
     packages = ["pandas", "plotly"]
   </py-config>
 
-  <!-- Our Python code -->
   <py-script>
 import pandas as pd
 import plotly.express as px
@@ -32,22 +27,13 @@ def handle_file(event):
     file = event.target.files[0]
     if not file:
         return
-
-    # Read uploaded CSV
     text = file.text().to_py()
     df = pd.read_csv(StringIO(text))
-
-    # Parse dates
     df["Date"] = pd.to_datetime(df["Date"])
-
-    # Build line chart
     fig = px.line(df, x="Date", y="Score", title="Marching Band Scores Over Time")
     fig.update_traces(mode="lines+markers")
-
-    # Show chart in div
     document.getElementById("chart").innerHTML = fig.to_html(include_plotlyjs="cdn", full_html=False)
 
-# Hook up file input
 document.getElementById("file-input").addEventListener("change", create_proxy(handle_file))
   </py-script>
 </body>
