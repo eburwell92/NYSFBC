@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Marching Band Scores</title>
+  <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+  <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+</head>
+<body>
+  <h1>Marching Band Scores Over Time</h1>
+
+  <!-- Upload CSV -->
+  <input type="file" id="file-input" />
+
+  <!-- Chart container -->
+  <div id="chart"></div>
+
+  <py-config>
+    packages = ["pandas", "plotly"]
+  </py-config>
+
+  <py-script>
+import pandas as pd
+import plotly.express as px
+from js import document
+
+def handle_file(event):
+    file = event.target.files[0]
+    if not file:
+        return
+    
+    # Read file contents into pandas
+    text = file.text()
+    text = text.to_py()
+    from io import StringIO
+    df = pd.read_csv(StringIO(text))
+
+    # Expecting columns like: Date, Score
+    # Ensure Date column is parsed properly
+    df["Date"] = pd.to_datetime(df["Date"])
+
+    # Build line chart
+    fig = px.line(df, x="Date", y="Score", title="Marching Band Scores Over Time")
+    fig.update_traces(mode="lines+markers")
+
+    # Display in div#chart
+    from pyodide.ffi import create_proxy
+    import json
+    graphJSON = fig.to_json()
+    import plotly
+    plotly.offline.plot(fig, include_plotlyjs="cdn", output_type="div", auto_open=False, show_link=False, config={"displayModeBar": True})
+    document.getElementById("chart").innerHTML = fig.to_html(include_plotlyjs="cdn", full_html=False)
+
+# Attach event listener
+from pyodide.ffi import create_proxy
+document.getElementById("file-input").addEventListener("change", create_proxy(handle_file))
+  </py-script>
+</body>
+</html>
