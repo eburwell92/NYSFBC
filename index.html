@@ -1,54 +1,158 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Marching Band Scores</title>
-
-  <!-- Fixed PyScript version to avoid CDN blocking -->
-  <link rel="stylesheet" href="https://pyscript.net/2024.1.1/pyscript.css" />
-  <script defer src="https://pyscript.net/2024.1.1/pyscript.js"></script>
+  <meta charset="UTF-8">
+  <title>CSV Line Graph with Division-Specific Hover</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-  <h1>Marching Band Scores Over Time</h1>
+<div id="chart" style="width:100%;height:600px;"></div>
 
-  <!-- File upload -->
-  <input type="file" id="file-input" />
-  <div id="chart"></div>
+<script>
+fetch("Full_NYSFBC_Score_Archive.csv")
+  .then(res => res.text())
+  .then(text => {
+    const rows = text.trim().split("\n").map(r => r.split(","));
+    const headers = rows[0].map(h => h.trim());
+    const dataRows = rows.slice(1);
 
-  <!-- Required packages -->
-  <py-config>
-    packages = ["pandas", "plotly"]
-  </py-config>
+    const idxDate = headers.indexOf("date");
+    const idxName = headers.indexOf("name");
+    const idxScore = headers.indexOf("score");
+    const idxDivision = headers.indexOf("division");
 
-  <!-- Python code for interactive line chart -->
-  <py-script>
-import pandas as pd
-import plotly.express as px
-from js import document
-from pyodide.ffi import create_proxy
-from io import StringIO
+    const groups = {};
+    const scoresByDate = {};
+    const nameDivisionMap = {};
 
-def handle_file(event):
-    file = event.target.files[0]
-    if not file:
-        return
+    // Group data
+    dataRows.forEach(r => {
+      const name = r[idxName].trim();
+      const division = r[idxDivision].trim();
+      const date = new Date(r[idxDate].trim());
+      const score = +r[idxScore];
 
-    # Read CSV
-    text = file.text().to_py()
-    df = pd.read_csv(StringIO(text))
+      nameDivisionMap[name] = division;
 
-    # Parse dates
-    df["Date"] = pd.to_datetime(df["Date"])
+      if (!groups[name]) groups[name] = {x:[], y:[], name:name};
+      groups[name].x.push(date);
+      groups[name].y.push(score);
 
-    # Create interactive line chart
-    fig = px.line(df, x="Date", y="Score", title="Marching Band Scores Over Time")
-    fig.update_traces(mode="lines+markers")
+      const dateKey = date.toDateString();
+      if (!scoresByDate[dateKey]) scoresByDate[dateKey] = [];
+      scoresByDate[dateKey].push({name, score, division});
+    });
 
-    # Display chart in div
-    document.getElementById("chart").innerHTML = fig.to_html(include_plotlyjs="cdn", full_html=False)
+    // Sort groups newest → oldest
+    for (const g of Object.values(groups)) {
+      const paired = g.x.map((d, i) => ({date: d, score: g.y[i]}));
+      paired.sort((a, b) => b.date - a.date);
+      g.x = paired.map(p => p.date);
+      g.y = paired.map(p => p.score);
+    }
 
-# Connect file input to handler
-document.getElementById("file-input").addEventListener("change", create_proxy(handle_file))
-  </py-script>
+    // Sort groups alphabetically
+    const sortedGroups = Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
+
+    // Build individual traces (hover skipped)
+    const traces = sortedGroups.map(g => ({
+      x: g.x,
+      y: g.y,
+      mode: g.x.length > 1 ? "lines+markers" : "markers",
+      name: g.name,
+      type: "scatter",
+      hoverinfo: "skip"
+    }));
+
+    // Create invisible hover trace
+    const uniqueDates = Object.keys(scoresByDate)
+      .map(d => new Date(d))
+      .sort((a, b) => b - a);
+
+    // Initial hover for All Bands
+    const getCustomData = (divisionFilter=null) => {
+      return uniqueDates.map(d => {
+        const dateKey = d.toDateString();
+        let scores = scoresByDate[dateKey];
+        if (divisionFilter) {
+          scores = scores.filter(s => s.division === divisionFilter);
+        }
+        const divisionName = divisionFilter ? divisionFilter : "All Divisions";
+        const ranking = scores
+          .sort((a, b) => b.score - a.score)
+          .map(s => `${s.score} — ${s.name}`)
+          .join("<br>");
+        return `<b>Division:</b> ${divisionName}<br>${ranking}`;
+      });
+    };
+
+    traces.push({
+      x: uniqueDates,
+      y: uniqueDates.map(d => {
+        const dateKey = d.toDateString();
+        const scores = scoresByDate[dateKey].map(s => s.score);
+        return scores.reduce((a,b) => a+b, 0) / scores.length;
+      }),
+      mode: "markers",
+      marker: {opacity: 0},
+      customdata: getCustomData(),
+      hovertemplate: "<b>Date:</b> %{x|%b %d, %Y}<br>%{customdata}<extra></extra>",
+      showlegend: false
+    });
+
+    // Unique divisions sorted alphabetically
+    const divisions = [...new Set(Object.values(nameDivisionMap))].sort();
+
+    // Build side-by-side buttons
+    const buttons = [
+      {
+        label: "All Bands",
+        method: "update",
+        args: [
+          { visible: traces.map(() => true) },
+          { hovermode: "x" }  // keep hovermode
+        ],
+        execute: true
+      },
+      ...divisions.map(div => ({
+        label: div,
+        method: "update",
+        args: [
+          { visible: traces.map((t, i) => i === traces.length-1 || nameDivisionMap[t.name] === div) },
+          { hovermode: "x" }
+        ],
+        execute: true
+      }))
+    ];
+
+    const layout = {
+      title: "Scores by Date",
+      xaxis: { title: "Date" },
+      yaxis: { title: "Score" },
+      hovermode: "x",
+      updatemenus: [{
+        buttons: buttons,
+        direction: "left",
+        showactive: true,
+        type: "buttons",
+        x: 0,
+        xanchor: "left",
+        y: -0.15,
+        yanchor: "top",
+        pad: {r: 5, t: 5}
+      }]
+    };
+
+    Plotly.newPlot("chart", traces, layout).then(function(chart){
+      const hoverTraceIndex = traces.length - 1;
+
+      // Update hover dynamically when buttons clicked
+      chart.on('plotly_buttonclicked', function(event){
+        let division = event.button.label === "All Bands" ? null : event.button.label;
+        Plotly.restyle(chart, {customdata: [getCustomData(division)]}, [hoverTraceIndex]);
+      });
+    });
+  });
+</script>
 </body>
 </html>
